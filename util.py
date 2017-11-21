@@ -4,11 +4,15 @@ import socks
 import traceback
 import arrow
 from cryptography import x509
+import copy
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.serialization import Encoding
+from pymongo import ReturnDocument
+import pymongo
+
 
 class Protocol(asyncio.Protocol):
     def connection_made(self, transport):
@@ -95,12 +99,32 @@ class Certificate(object):
         return res 
 
 
+    def _rdn(self, _type):
+        rdn = dict()
+        try:
+            rdns = eval("self.cert.%s" %_type)
+            for r in rdns:
+                rdn[r.oid._name] = r.value
+        except Exception as e:
+            traceback.print_exc()
+        finally:
+            return rdn
 
-    async def get_info(self):
+
+
+    def get_issuer_info(self):
+        return self._rdn("issuer")
+
+    def get_subject_info(self):
+        return self._rdn("subject")
+
+
+    async def get_cert_info(self):
         cinfo = dict()
         try:
             cinfo['version'] = self.version
-            cinfo['serial_number'] = self.serial_number
+            #cinfo['serial_number'] = self.serial_number
+            cinfo['_id'] = self.serial_number
             cinfo['pem'] = self.get_certificate()
             cinfo['der'] = self.cert_string
             cinfo['serial_number'] = self.serial_number
@@ -121,14 +145,18 @@ async def setup_proxy(host, port):
     s_socket.connect((host, port))
     return s_socket
 
-async def saveCert(db, cert):
+async def saveCert(db, cert, issuer_id=None, subject_id=None):
     try:
-        data = await cert.get_info()
-        res = await db.Certificates.insert_one(data) 
-        if res.acknowledged:
+        data = await cert.get_cert_info()
+        # check the cert existense
+        #check = await db.Certificates.find_one({"serial_number":data['serial_number']})
+        res = await db.Certificates.insert_one(data)
+        if res:
             return True
         else:
             return False
+    except pymongo.errors.DuplicateKeyError as e:
+        return True
     except Exception as e:
         traceback.print_exc()
         return False
@@ -137,7 +165,29 @@ async def saveCert(db, cert):
 async def saveDomain(db, cert):
     return True
 
-async def saveRDN(db, cert):
-    return True
+async def _saveRDN(db, data, upper=None):
+    try:
+        update = copy.deepcopy(data) 
+        update['upper'] = upper
+        res = await db.RDNs.find_one_and_update(data, 
+                                                {"$set":{"upper":upper}},
+                                                upsert=True,
+                                                return_document=ReturnDocument.AFTER)
+        if res:
+            return res
+        else:
+            return False
+    except Exception as e:
+        raise
+
+async def saveRDNs(db, cert):
+    try:
+        res1 = await  _saveRDN(db, cert.get_issuer_info())
+        res2 = await  _saveRDN(db, cert.get_subject_info(), upper=res1['_id'])
+        return True
+    except Exception as e:
+        traceback.print_exc()
+        return False
+
 
 
