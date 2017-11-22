@@ -66,7 +66,7 @@ async def do_connect(host, port, db, proxy=True):
 @app.listener('before_server_start')
 async def setup_db(app, loop):
     app.executor = ThreadPoolExecutor()
-    db = AsyncIOMotorClient(host='172.29.152.199', port=27017).CertsDB
+    db = AsyncIOMotorClient(host='172.29.152.161', port=20000).CertsDB
     context = ssl.SSLContext()
     context.verify_mode = ssl.CERT_REQUIRED
     context.load_verify_locations(certifi.where())
@@ -91,7 +91,7 @@ def sub_loop(host, port):
     loop = asyncio.new_event_loop()
     try:
         asyncio.set_event_loop(loop)
-        db = AsyncIOMotorClient(host='172.29.152.199', port=27017).CertsDB
+        db = AsyncIOMotorClient(host='172.29.152.161', port=20000).CertsDB
         loop.run_until_complete(do_connect(host, port, db))
     except Exception as e:
         flag =  False

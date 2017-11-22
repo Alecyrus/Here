@@ -21,6 +21,8 @@ import asyncio
 from riprova import retry
 import riprova
 
+import hashlib
+
 
 async def on_retry(err, next_try):
     print('Operation error: {}'.format(err))
@@ -191,6 +193,9 @@ class Certificate(object):
             rdns = eval("self.cert.%s" %_type)
             for r in rdns:
                 rdn[r.oid._name] = r.value
+            
+            identity = hashlib.sha1(str(rdn).encode("utf-8")).hexdigest()
+            rdn['digest'] = identity
             rdn["trusted"] = self.trusted
                 
         except Exception as e:
@@ -214,7 +219,6 @@ class Certificate(object):
             cinfo['serial_number'] = self.serial_number
             cinfo['pem'] = self.get_certificate()
             cinfo['der'] = self.get_certificate(encoding=Encoding.DER)
-            cinfo['serial_number'] = self.serial_number
             cinfo['fingerprint'] = self.fingerprint
             cinfo['trusted'] = self.trusted
             cinfo['root'] = root
