@@ -167,7 +167,6 @@ class Certificate(object):
             ainfos = self.cert.extensions.get_extension_for_class(x509.AuthorityInformationAccess)
             for ainfo in ainfos.value:
                 if ainfo.access_method._name == "caIssuers":
-                    print("ainfo.access_location.value",ainfo.access_location.value)
                     return ainfo.access_location.value
             if not upper:
                 raise  AttributeError("No caIssuers")
