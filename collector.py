@@ -5,6 +5,7 @@ from util import saveRDNs
 from util import saveDomain
 from util import saveCert
 from util import setup_proxy
+from util import get_certificate_chain
 from sanic import Sanic
 from sanic.response import json
 import socks
@@ -14,40 +15,48 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import functools
 import logging
 import traceback
+import certifi
+import ssl
 
 
 app = Sanic()
 app.config.REQUEST_TIMEOUT = 60
 
-async def do_connect(host, port, db, proxy=False):
+async def do_connect(host, port, db, proxy=True):
    try:
        async with timeout(60) as cm: 
            try:
                loop = asyncio.get_event_loop()
+               context = ssl.SSLContext()
+               context.verify_mode = ssl.CERT_REQUIRED
+               context.load_verify_locations(certifi.where())
                if proxy:
                    s_socket = await asyncio.ensure_future(setup_proxy(host, port))
-                   (transport, protocol)  = await loop.create_connection(Protocol, server_hostname="", sock=s_socket, ssl=True)
+                   (transport, protocol)  = await loop.create_connection(Protocol, server_hostname=host, sock=s_socket, ssl=context)
                else:
-                   (transport, protocol)  = await loop.create_connection(Protocol, host, port, ssl=True)
-               der_string = (transport.get_extra_info("ssl_object").getpeercert(binary_form=True))
+                   (transport, protocol)  = await loop.create_connection(Protocol, host, port, ssl=context)
+               der_string = transport.get_extra_info("ssl_object").getpeercert(binary_form=True)
                transport.close()
-               if proxy:
-                   s_socket.close()
-               cert = Certificate(der_string)
-               await saveCert(db, cert)
-               await saveRDNs(db, cert)
-               await saveDomain(db, cert)
-               #save_tasks =[asyncio.ensure_future(saveCert(app.db, cert)),
-               #             asyncio.ensure_future(saveRDNs(app.db, cert)), 
-               #             asyncio.ensure_future(saveDomain(app.db, cert))] 
-               #   
-               #results = await asyncio.gather(*save_tasks)
-               #for ret in results:
-               #    if not ret:
-               #        return False
+               cert = Certificate().init_cert(der_string=der_string)
+               chain = await get_certificate_chain(db, cert)
+               if not chain:
+                   await saveDomain(db, host, False)
+                   raise AttributeError("Time out")
+               cert_id = None
+               upper = None
+               for i in range(len(chain)-1, -1, -1):
+                   issuer, subject = await saveRDNs(db, chain[i])
+                   root = False
+                   if i == len(chain)-1:
+                       root = True
+                   upper = await saveCert(db, chain[i], issuer['_id'], subject['_id'], root=root, upper=upper)
+                   if i == 0:
+                       cert_id = upper
+               await saveDomain(db, host, cert_id)
            except Exception as e:
                raise
    except Exception as e:
+       await saveDomain(db, host, None)
        raise
    finally:
        if cm.expired:
@@ -57,6 +66,15 @@ async def do_connect(host, port, db, proxy=False):
 @app.listener('before_server_start')
 async def setup_db(app, loop):
     app.executor = ThreadPoolExecutor()
+    db = AsyncIOMotorClient().CertsDB
+    context = ssl.SSLContext()
+    context.verify_mode = ssl.CERT_REQUIRED
+    context.load_verify_locations(certifi.where())
+    root_cas = context.get_ca_certs(binary_form=True)
+    for root_ca in root_cas:
+        issuer, subject = await saveRDNs(db, Certificate(trusted=True).init_cert(der_string=root_ca)) 
+        await saveCert(db, Certificate(trusted=True).init_cert(der_string=root_ca), issuer['_id'], subject['_id'], root=True, upper=None)
+
 
 @app.listener('after_server_start')
 async def notify_server_started(app, loop):
@@ -103,5 +121,5 @@ async def test(request):
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8183, workers=10)
+    app.run(host="0.0.0.0", port=8183, workers=1)
 
