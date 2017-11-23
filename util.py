@@ -152,11 +152,105 @@ class Certificate(object):
  
     @property
     def extensions(self):
-        extensions = list()
+        extensions = dict()
         for ext in self.cert.extensions:
-            print(ext.oid._name)
+            print(ext.value)
+            extensions[ext.oid._name] = str(ext.value)
             #extensions.append(ext.name)
         return extensions
+
+
+
+    @property
+    def basicConstraints(self):
+        ext = dict()
+        try:
+            temp = self.cert.extensions.get_extension_for_class(x509.BasicConstraints)
+            ext['critical'] = temp.critical
+            ext['ca'] = temp.value._ca
+            ext['path_length'] = temp.value._path_length
+        except Exception as e:
+            pass
+        finally:
+            return ext
+            
+    @property
+    def authorityInformationAccess(self):
+        ext = dict()
+        try:
+            temp = self.cert.extensions.get_extension_for_class(x509.AuthorityInformationAccess)
+            ext['critical'] = temp.critical
+            for ainfo in temp.value:
+                ext[ainfo.access_method._name] = ainfo.access_location.value
+        except Exception as e:
+            pass
+        finally:
+            return ext
+
+    @property
+    def subjectAlternativeName(self):
+        ext = dict()
+        try:
+            temp = self.cert.extensions.get_extension_for_class(x509.SubjectAlternativeName)
+            ext['critical'] = temp.critical
+            ext['DNSName'] = temp.value.get_values_for_type(x509.DNSName)
+            ext['RFC822Name'] = temp.value.get_values_for_type(x509.RFC822Name)
+            ext['DirectoryName'] = list()
+            for dn in temp.value.get_values_for_type(x509.DirectoryName):
+                 for name in dn:
+                     ext['DirectoryName'].append(name.value)
+            ext['UniformResourceIdentifier'] = temp.value.get_values_for_type(x509.UniformResourceIdentifier)
+            ext['IPAddress'] = temp.value.get_values_for_type(x509.IPAddress)
+            ext['RegisteredID'] = temp.value.get_values_for_type(x509.RegisteredID)
+            ext['OtherName'] = temp.value.get_values_for_type(x509.OtherName)
+        except Exception as e:
+            pass
+        finally:
+            return ext
+
+    @property
+    def keyUsage(self):
+        ext = dict()
+        try:
+            temp = self.cert.extensions.get_extension_for_class(x509.KeyUsage)
+            ext['critical'] = temp.critical
+            ext['tal_signature'] = temp.value.digital_signature
+            ext['content_commitment'] = temp.value.content_commitment
+            ext['key_encipherment'] = temp.value.key_encipherment
+            ext['data_encipherment'] = temp.value.data_encipherment
+            ext['key_agreement'] = temp.value.key_agreement
+            if temp.value.key_agreement:
+                ext['encipher_only'] = temp.value.encipher_only
+                ext['decipher_only'] = temp.value.decipher_only
+            ext['key_cert_sign'] = temp.value.key_cert_sign
+            ext['crl_sign'] = temp.value.crl_sign
+        except Exception as e:
+            pass
+        finally:
+            return ext
+
+
+
+
+
+    @property
+    def crlDistributionPoints(self):
+        ext = dict()
+        try:
+            temp = self.cert.extensions.get_extension_for_class(x509.CRLDistributionPoints)
+            for ainfo in temp.value:
+                t = list()
+                for value in ainfo.full_name:
+                    t.append(value.value) 
+                ext["full_name"] = t
+                ext["relative_name"] = ainfo.relative_name
+                ext["reasons"] = ainfo.reasons
+                ext["crl_issuer"] = ainfo.crl_issuer
+        except Exception as e:
+            pass
+        finally:
+            return ext
+
 
     def get_certificate(self, encoding=Encoding.PEM):
         #res = self.b2s(self.cert.public_bytes(encoding=encoding)).replace("\n", "")    
@@ -222,6 +316,11 @@ class Certificate(object):
             cinfo['fingerprint'] = self.fingerprint
             cinfo['trusted'] = self.trusted
             cinfo['root'] = root
+            cinfo['BasicConstraints'] = self.basicConstraints
+            cinfo['AuthorityInformationAccess'] = self.authorityInformationAccess
+            cinfo['CRLDistributionPoints'] = self.crlDistributionPoints
+            cinfo['SubjectAlternativeName'] = self.subjectAlternativeName
+            cinfo['KeyUsage'] = self.keyUsage
             cinfo['not_valid_before'] = self.not_valid_before
             cinfo['not_valid_after'] = self.not_valid_after
             cinfo['signature'] = self.signature

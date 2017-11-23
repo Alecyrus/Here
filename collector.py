@@ -95,6 +95,7 @@ def sub_loop(host, port):
         loop.run_until_complete(do_connect(host, port, db))
     except Exception as e:
         flag =  False
+        saveDomain(db, host, False)
         traceback.print_exc()
     finally:
         if loop.is_running():
