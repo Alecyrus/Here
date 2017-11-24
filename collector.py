@@ -8,6 +8,7 @@ from util import setup_proxy
 from util import get_certificate_chain
 from sanic import Sanic
 from sanic.response import json
+from sanic.exceptions import ServerError
 import socks
 from async_timeout import timeout
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -20,11 +21,11 @@ import ssl
 
 
 app = Sanic()
-app.config.REQUEST_TIMEOUT = 60
+app.config.REQUEST_TIMEOUT = 20
 
 async def do_connect(host, port, db, proxy=True):
    try:
-       async with timeout(60) as cm: 
+       async with timeout(20) as cm: 
            try:
                loop = asyncio.get_event_loop()
                context = ssl.SSLContext()
@@ -112,6 +113,7 @@ async def test(request):
         flag = await asyncio.get_event_loop().run_in_executor(app.executor, functools.partial(sub_loop, params, 443))
     except Exception as e:
         traceback.print_exc()
+        flag = False
         raise ServerError("Invlid request", status_code=500)
     if flag:
         resp = {"Info":"Collecting(%s) finished." %params}
