@@ -287,7 +287,6 @@ class Certificate(object):
             rdns = eval("self.cert.%s" %_type)
             for r in rdns:
                 rdn[r.oid._name] = r.value
-            
             identity = hashlib.sha1(str(rdn).encode("utf-8")).hexdigest()
             rdn['digest'] = identity
             rdn["trusted"] = self.trusted
@@ -379,21 +378,27 @@ async def _saveRDN(db, data, upper=None):
     try:
         update = copy.deepcopy(data) 
         update['upper'] = upper
-        res = await db.RDNs.find_one_and_update(data, 
-                                                {"$set":{"upper":upper}},
-                                                upsert=True,
-                                                return_document=ReturnDocument.AFTER)
-        if res:
-            return res
+        check = await db.RDNs.find_one(data)
+        data.pop("trusted")
+        print(data)
+        if check:
+            if upper:
+                await db.RDNs.update_one(data, {"$set":{"upper":upper}})
+            return check['_id']
         else:
-            return False
+            res = await db.RDNs.insert_one(update)
+        if res:
+            return res.inserted_id
+        else:
+            return -1
     except Exception as e:
+        traceback.print_exc()
         raise
 
-async def saveRDNs(db, cert):
+async def saveRDNs(db, cert, upper=None):
     try:
-        res1 = await  _saveRDN(db, cert.get_issuer_info())
-        res2 = await  _saveRDN(db, cert.get_subject_info(), upper=res1['_id'])
+        res1 = await  _saveRDN(db, cert.get_issuer_info(), upper=upper)
+        res2 = await  _saveRDN(db, cert.get_subject_info(), upper=res1)
         return res1, res2
     except Exception as e:
         traceback.print_exc()

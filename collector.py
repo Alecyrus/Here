@@ -45,12 +45,14 @@ async def do_connect(host, port, db, proxy=True):
                    raise AttributeError("Time out")
                cert_id = None
                upper = None
+               upper_rdn = None
                for i in range(len(chain)-1, -1, -1):
-                   issuer, subject = await saveRDNs(db, chain[i])
+                   issuer, subject = await saveRDNs(db, chain[i], upper_rdn)
+                   upper_rdn = subject
                    root = False
                    if i == len(chain)-1:
                        root = True
-                   upper = await saveCert(db, chain[i], issuer['_id'], subject['_id'], root=root, upper=upper)
+                   upper = await saveCert(db, chain[i], issuer, subject, root=root, upper=upper)
                    if i == 0:
                        cert_id = upper
                await saveDomain(db, host, cert_id)
@@ -74,7 +76,7 @@ async def setup_db(app, loop):
     root_cas = context.get_ca_certs(binary_form=True)
     for root_ca in root_cas:
         issuer, subject = await saveRDNs(db, Certificate(trusted=True).init_cert(der_string=root_ca)) 
-        await saveCert(db, Certificate(trusted=True).init_cert(der_string=root_ca), issuer['_id'], subject['_id'], root=True, upper=None)
+        await saveCert(db, Certificate(trusted=True).init_cert(der_string=root_ca), issuer, subject, root=True, upper=None)
 
 
 @app.listener('after_server_start')
