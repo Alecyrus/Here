@@ -378,11 +378,10 @@ async def _saveRDN(db, data, upper=None):
     try:
         update = copy.deepcopy(data) 
         update['upper'] = upper
-        check = await db.RDNs.find_one(data)
         data.pop("trusted")
-        print(data)
+        check = await db.RDNs.find_one(data)
         if check:
-            if upper:
+            if upper and not check['upper']:
                 await db.RDNs.update_one(data, {"$set":{"upper":upper}})
             return check['_id']
         else:

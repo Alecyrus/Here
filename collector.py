@@ -18,10 +18,14 @@ import logging
 import traceback
 import certifi
 import ssl
+import logging
 
 
 app = Sanic()
 app.config.REQUEST_TIMEOUT = 20
+
+
+
 
 async def do_connect(host, port, db, proxy=True):
    try:
@@ -63,7 +67,7 @@ async def do_connect(host, port, db, proxy=True):
        raise
    finally:
        if cm.expired:
-           print("Timeout")
+           logging.exception("Timeout")
 
 
 @app.listener('before_server_start')
@@ -81,11 +85,11 @@ async def setup_db(app, loop):
 
 @app.listener('after_server_start')
 async def notify_server_started(app, loop):
-    print('Server successfully started!')
+    logging.info('Server successfully started!')
 
 @app.listener('before_server_stop')
 async def notify_server_stopping(app, loop):
-    print('Server shutting down!')
+    logging.info('Server shutting down!')
 
     
 
@@ -110,21 +114,18 @@ def sub_loop(host, port):
 async def test(request):
     try:
         params = request.args['target'][0]
-        print("Starting to collect from %s" % params)
-        #flag = await do_connect(params, 443)
         flag = await asyncio.get_event_loop().run_in_executor(app.executor, functools.partial(sub_loop, params, 443))
     except Exception as e:
         traceback.print_exc()
         flag = False
-        raise ServerError("Invlid request", status_code=500)
+        pass
     if flag:
         resp = {"Info":"Collecting(%s) finished." %params}
     else:
         resp = {"Info":"Failed to collect(%s) the certificates." %params}
-    print(resp)
     return json(resp)
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8183, workers=1)
+    app.run(host="0.0.0.0", port=8183, workers=100)
 
