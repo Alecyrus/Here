@@ -72,7 +72,8 @@ async def do_connect(host, port, db, proxy=True):
 @app.listener('before_server_start')
 async def setup_db(app, loop):
     app.executor = ThreadPoolExecutor()
-    db = AsyncIOMotorClient(host='172.29.152.161', port=20000).CertsDB
+    conn = AsyncIOMotorClient(host='172.29.152.161', port=20000)
+    db = conn.CertsDB
     context = ssl.SSLContext()
     context.verify_mode = ssl.CERT_REQUIRED
     context.load_verify_locations(certifi.where())
@@ -80,7 +81,7 @@ async def setup_db(app, loop):
     for root_ca in root_cas:
         issuer, subject = await saveRDNs(db, Certificate(trusted=True).init_cert(der_string=root_ca)) 
         await saveCert(db, Certificate(trusted=True).init_cert(der_string=root_ca), issuer, subject, root=True, upper=None)
-    
+    conn.close() 
 
 
 @app.listener('after_server_start')
