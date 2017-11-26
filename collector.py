@@ -22,7 +22,7 @@ import logging
 
 
 app = Sanic()
-app.config.REQUEST_TIMEOUT = 20
+app.config.REQUEST_TIMEOUT = 60
 
 async def do_connect(host, port, db, proxy=True):
    try:
@@ -58,6 +58,8 @@ async def do_connect(host, port, db, proxy=True):
                        cert_id = upper
                await saveDomain(db, host, cert_id)
            except Exception as e:
+               traceback.print_exc()
+               print(e)
                raise
    except Exception as e:
        await saveDomain(db, host, None)
@@ -95,12 +97,12 @@ def sub_loop(host, port):
     loop = asyncio.new_event_loop()
     try:
         asyncio.set_event_loop(loop)
-        db = AsyncIOMotorClient(host='172.29.152.161', port=20000, connectTimeoutMS=1000, maxPoolSize=20000,socketKeepAlive=True).CertsDB
+        db = AsyncIOMotorClient(host='172.29.152.161',port=20000,connectTimeoutMS=1000, maxPoolSize=2000,socketKeepAlive=True).CertsDB
         loop.run_until_complete(do_connect(host, port, db))
     except Exception as e:
+        traceback.print_exc()
         flag =  False
         saveDomain(db, host, False)
-        traceback.print_exc()
     finally:
         if loop.is_running():
             loop.close()
@@ -120,9 +122,10 @@ async def test(request):
         resp = {"Info":"Collecting(%s) finished." %params}
     else:
         resp = {"Info":"Failed to collect(%s) the certificates." %params}
+    print(resp)
     return json(resp)
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8183, workers=20)
+    app.run(host="0.0.0.0", port=8183, workers=10)
 

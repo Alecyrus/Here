@@ -22,16 +22,16 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.serialization import Encoding
 
-MAX_AUTO_RECONNECT_ATTEMPTS = 5
+MAX_AUTO_RECONNECT_ATTEMPTS = 4
 
 def graceful_auto_reconnect(mongo_op_func):
     """Gracefully handle a reconnection event."""
     @functools.wraps(mongo_op_func)
     def wrapper(*args, **kwargs):
-        for attempt in xrange(MAX_AUTO_RECONNECT_ATTEMPTS):
+        for attempt in range(MAX_AUTO_RECONNECT_ATTEMPTS):
             try:
                 return mongo_op_func(*args, **kwargs)
-            except pymongo.errors.AutoReconnect as e:
+            except Exception as e:
                 wait_t = 0.5 * pow(2, attempt) # exponential back off
                 print("PyMongo auto-reconnecting... %s. Waiting %.1f seconds.", str(e), wait_t)
                 asyncio.sleep(wait_t)
@@ -43,8 +43,6 @@ def graceful_auto_reconnect(mongo_op_func):
 @ graceful_auto_reconnect
 async def db_operator(func):
     return await func
-
-
 
 
 
@@ -62,7 +60,8 @@ async def fetch(session, url):
             content = await response.read()
             return content
     except Exception as e:
-        traceback.print_exc()
+        print(str(e))
+        #traceback.print_exc()
         return content
 
 
@@ -73,7 +72,8 @@ async def get_upper_certificate_crt(url):
         try:
             cert = await fetch(session, url)
         except Exception as e:
-            traceback.print_exc()
+            print(str(e))
+            #traceback.print_exc()
         finally:
             return cert
 
@@ -310,11 +310,12 @@ class Certificate(object):
             for r in rdns:
                 rdn[r.oid._name] = r.value
             identity = hashlib.sha1(str(rdn).encode("utf-8")).hexdigest()
-            rdn['digest'] = identity/
+            rdn['digest'] = identity
             rdn["trusted"] = self.trusted
                 
         except Exception as e:
-            traceback.print_exc()
+            #traceback.print_exc()
+            print(str(e))
         finally:
             return rdn
 
@@ -347,7 +348,8 @@ class Certificate(object):
             cinfo['signature'] = self.signature
             cinfo['tbs_certificate_bytes'] = self.tbs_certificate_bytes
         except Exception as e:
-            traceback.print_exc()
+            #traceback.print_exc()
+            print(str(e))
         return cinfo 
 
 
@@ -374,7 +376,8 @@ async def saveCert(db, cert, issuer_id=None, subject_id=None, root=False, upper=
             print("Error: Failed")
             return False
     except Exception as e:
-        traceback.print_exc()
+        print(str(e))
+        #traceback.print_exc()
         return False
     
 
@@ -392,7 +395,8 @@ async def saveDomain(db, host, cert_id):
         else:
             await db_operator(db.Domains.insert_one({"host":host,"cert":cert_id}))
     except Exception as e:
-        traceback.print_exc()
+        print(str(e))
+        #traceback.print_exc()
         return False
     return True
 
@@ -413,6 +417,7 @@ async def _saveRDN(db, data, upper=None):
         else:
             return -1
     except Exception as e:
+        print(str(e))
         traceback.print_exc()
         raise
 
@@ -422,7 +427,7 @@ async def saveRDNs(db, cert, upper=None):
         res2 = await  _saveRDN(db, cert.get_subject_info(), upper=res1)
         return res1, res2
     except Exception as e:
-        traceback.print_exc()
+        print(str(e))
         return False
 
 async def get_certificate_chain(db, cert):
@@ -445,6 +450,7 @@ async def get_certificate_chain(db, cert):
                 current = Certificate().init_cert(der_string=upper_crt)
             chain.append(current)
         except Exception as e:
+            print(str(e))
             traceback.print_exc()
             raise
     return chain
