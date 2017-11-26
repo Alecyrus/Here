@@ -80,6 +80,7 @@ async def setup_db(app, loop):
     for root_ca in root_cas:
         issuer, subject = await saveRDNs(db, Certificate(trusted=True).init_cert(der_string=root_ca)) 
         await saveCert(db, Certificate(trusted=True).init_cert(der_string=root_ca), issuer, subject, root=True, upper=None)
+    
 
 
 @app.listener('after_server_start')
@@ -97,7 +98,8 @@ def sub_loop(host, port):
     loop = asyncio.new_event_loop()
     try:
         asyncio.set_event_loop(loop)
-        db = AsyncIOMotorClient(host='172.29.152.161',port=20000,connectTimeoutMS=1000, maxPoolSize=2000,socketKeepAlive=True).CertsDB
+        conn = AsyncIOMotorClient(host='172.29.152.161',port=20000,connectTimeoutMS=1000, maxPoolSize=2000,socketKeepAlive=True)
+        db = conn.CertsDB
         loop.run_until_complete(do_connect(host, port, db))
     except Exception as e:
         traceback.print_exc()
@@ -106,6 +108,7 @@ def sub_loop(host, port):
     finally:
         if loop.is_running():
             loop.close()
+        conn.close()
         return flag
         
 
