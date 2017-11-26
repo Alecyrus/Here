@@ -24,9 +24,6 @@ import logging
 app = Sanic()
 app.config.REQUEST_TIMEOUT = 20
 
-
-
-
 async def do_connect(host, port, db, proxy=True):
    try:
        async with timeout(20) as cm: 
@@ -98,7 +95,7 @@ def sub_loop(host, port):
     loop = asyncio.new_event_loop()
     try:
         asyncio.set_event_loop(loop)
-        db = AsyncIOMotorClient(host='172.29.152.161', port=20000).CertsDB
+        db = AsyncIOMotorClient(host='172.29.152.161', port=20000, connectTimeoutMS=1000, maxPoolSize=20000,socketKeepAlive=True).CertsDB
         loop.run_until_complete(do_connect(host, port, db))
     except Exception as e:
         flag =  False
@@ -127,5 +124,5 @@ async def test(request):
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8183, workers=100)
+    app.run(host="0.0.0.0", port=8183, workers=20)
 
