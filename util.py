@@ -1,27 +1,51 @@
 import asyncio
 import socks
-
-import traceback
 import arrow
-from cryptography import x509
-import cryptography
 import copy
+import aiosocks
+import pymongo
+import aiohttp
+import asyncio
+import riprova
+import hashlib
+import functools
+import pymongo
+import traceback
+import cryptography
 
+from riprova import retry
+from cryptography import x509
+from pymongo import ReturnDocument
+from aiosocks.connector import ProxyConnector, ProxyClientRequest
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.serialization import Encoding
-from pymongo import ReturnDocument
-import aiosocks
-from aiosocks.connector import ProxyConnector, ProxyClientRequest
-import pymongo
 
-import aiohttp
-import asyncio
-from riprova import retry
-import riprova
+MAX_AUTO_RECONNECT_ATTEMPTS = 5
 
-import hashlib
+def graceful_auto_reconnect(mongo_op_func):
+    """Gracefully handle a reconnection event."""
+    @functools.wraps(mongo_op_func)
+    def wrapper(*args, **kwargs):
+        for attempt in xrange(MAX_AUTO_RECONNECT_ATTEMPTS):
+            try:
+                return mongo_op_func(*args, **kwargs)
+            except pymongo.errors.AutoReconnect as e:
+                wait_t = 0.5 * pow(2, attempt) # exponential back off
+                print("PyMongo auto-reconnecting... %s. Waiting %.1f seconds.", str(e), wait_t)
+                asyncio.sleep(wait_t)
+  
+    return wrapper
+
+
+
+@ graceful_auto_reconnect
+async def db_operator(func):
+    return await func
+
+
+
 
 
 async def on_retry(err, next_try):
@@ -154,9 +178,7 @@ class Certificate(object):
     def extensions(self):
         extensions = dict()
         for ext in self.cert.extensions:
-            print(ext.value)
             extensions[ext.oid._name] = str(ext.value)
-            #extensions.append(ext.name)
         return extensions
 
 
@@ -269,9 +291,9 @@ class Certificate(object):
         except Exception as e:
             filters = self.get_issuer_info()
             filters.pop("trusted")
-            check = await db.RDNs.find_one(filters)
+            check = await db_operator(db.RDNs.find_one(filters))
             if check:
-                root_cert = await db.Certificates.find_one({"subject":check['upper']})
+                root_cert = await db_operator(db.Certificates.find_one({"subject":check['upper']}))
                 if not root_cert:
                     return False
                 return root_cert
@@ -288,7 +310,7 @@ class Certificate(object):
             for r in rdns:
                 rdn[r.oid._name] = r.value
             identity = hashlib.sha1(str(rdn).encode("utf-8")).hexdigest()
-            rdn['digest'] = identity
+            rdn['digest'] = identity/
             rdn["trusted"] = self.trusted
                 
         except Exception as e:
@@ -342,10 +364,10 @@ async def saveCert(db, cert, issuer_id=None, subject_id=None, root=False, upper=
         data['issuer'] = issuer_id
         data['subject'] = subject_id
         data['upper'] = upper
-        check = await db.Certificates.find_one(data)
+        check = await db_operator(db.Certificates.find_one(data))
         if check:
             return check['_id']
-        res = await db.Certificates.insert_one(data)
+        res = await db_operator(db.Certificates.insert_one(data))
         if res.acknowledged:
             return res.inserted_id
         else:
@@ -358,17 +380,17 @@ async def saveCert(db, cert, issuer_id=None, subject_id=None, root=False, upper=
 
 async def saveDomain(db, host, cert_id):
     try:
-        check = await db.Domains.find_one({"host":host})
+        check = await db_operator(db.Domains.find_one({"host":host}))
         if check:
             if check['cert'] != cert_id and ( not check['cert'] and cert_id ):
-                await db.Domains.find_one_and_update({"host":host},
+                await db_operator(db.Domains.find_one_and_update({"host":host},
                                                      {"$set":{"cert":cert_id}},
                                                       upsert=True,
-                                                      return_document=ReturnDocument.AFTER)
+                                                      return_document=ReturnDocument.AFTER))
             else:
                 return True
         else:
-            await db.Domains.insert_one({"host":host,"cert":cert_id})
+            await db_operator(db.Domains.insert_one({"host":host,"cert":cert_id}))
     except Exception as e:
         traceback.print_exc()
         return False
@@ -379,13 +401,13 @@ async def _saveRDN(db, data, upper=None):
         update = copy.deepcopy(data) 
         update['upper'] = upper
         data.pop("trusted")
-        check = await db.RDNs.find_one(data)
+        check = await db_operator(db.RDNs.find_one(data))
         if check:
             if upper and not check['upper']:
-                await db.RDNs.update_one(data, {"$set":{"upper":upper}})
+                await db_operator(db.RDNs.update_one(data, {"$set":{"upper":upper}}))
             return check['_id']
         else:
-            res = await db.RDNs.insert_one(update)
+            res = await db_operator(db.RDNs.insert_one(update))
         if res:
             return res.inserted_id
         else:
