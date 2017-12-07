@@ -6,7 +6,7 @@ nohup.out
 shadowsocks.json
 # C extensions
 *.so
-
+.idea/
 # Distribution / packaging
 .Python
 env/
