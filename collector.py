@@ -42,6 +42,8 @@ async def do_connect(host, port, proxy=True):
                 'redis://172.29.152.196/0')
                 print(cert)
                 await conn.execute('hmset', host, "cert", der_string)
+                conn.close()
+                await conn.wait_closed()
             except Exception as e:
                 traceback.print_exc()
                 raise
@@ -49,8 +51,6 @@ async def do_connect(host, port, proxy=True):
         traceback.print_exc()
         pass
     finally:
-        conn.close()
-        await conn.wait_closed()
         if cm.expired:
             logging.exception("Timeout")
 
