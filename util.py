@@ -213,8 +213,8 @@ class Certificate(object):
 
 
     def get_certificate(self, encoding=Encoding.PEM):
-        #res = self.b2s(self.cert.public_bytes(encoding=encoding)).replace("\n", "")    
-        res = self.cert.public_bytes(encoding=encoding)   
+        res = self.b2s(self.cert.public_bytes(encoding=encoding))
+        #res = self.cert.public_bytes(encoding=encoding)   
         return res 
 
     async def get_upper_url(self, db):
