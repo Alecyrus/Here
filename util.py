@@ -2,81 +2,19 @@ import asyncio
 import socks
 import arrow
 import copy
-import aiosocks
-import pymongo
-import aiohttp
 import asyncio
-import riprova
 import hashlib
 import functools
-import pymongo
 import traceback
 import cryptography
 
-from riprova import retry
 from cryptography import x509
-from pymongo import ReturnDocument
-from aiosocks.connector import ProxyConnector, ProxyClientRequest
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.serialization import Encoding
 
 MAX_AUTO_RECONNECT_ATTEMPTS = 4
-
-def graceful_auto_reconnect(mongo_op_func):
-    """Gracefully handle a reconnection event."""
-    @functools.wraps(mongo_op_func)
-    def wrapper(*args, **kwargs):
-        for attempt in range(MAX_AUTO_RECONNECT_ATTEMPTS):
-            try:
-                return mongo_op_func(*args, **kwargs)
-            except Exception as e:
-                wait_t = 0.5 * pow(2, attempt) # exponential back off
-                print("PyMongo auto-reconnecting... %s. Waiting %.1f seconds.", str(e), wait_t)
-                asyncio.sleep(wait_t)
-  
-    return wrapper
-
-
-
-@ graceful_auto_reconnect
-async def db_operator(func):
-    return await func
-
-
-
-async def on_retry(err, next_try):
-    print('Operation error: {}'.format(err))
-    print('Next try in {}ms'.format(next_try))
-
-
-@retry(on_retry=on_retry, backoff=riprova.ConstantBackoff(retries=10))
-async def fetch(session, url):
-    auth5 = aiosocks.Socks5Auth('proxyuser1', password='pwd')
-    content = False
-    try:
-        async with session.get(url, proxy='socks5://127.0.0.1:1080',proxy_auth=auth5) as response:
-            content = await response.read()
-            return content
-    except Exception as e:
-        print(str(e))
-        #traceback.print_exc()
-        return content
-
-
-async def get_upper_certificate_crt(url):
-    conn =  ProxyConnector(remote_resolve=True)
-    async with aiohttp.ClientSession(connector=conn, request_class=ProxyClientRequest) as session:
-        cert = False
-        try:
-            cert = await fetch(session, url)
-        except Exception as e:
-            print(str(e))
-            #traceback.print_exc()
-        finally:
-            return cert
-
 
 class Protocol(asyncio.Protocol):
     def connection_made(self, transport):
@@ -359,98 +297,3 @@ async def setup_proxy(host, port):
     s_socket.setblocking(0)
     s_socket.connect((host, port))
     return s_socket
-
-async def saveCert(db, cert, issuer_id=None, subject_id=None, root=False, upper=None):
-    try:
-        data = await cert.get_cert_info(root=root)
-        data['issuer'] = issuer_id
-        data['subject'] = subject_id
-        data['upper'] = upper
-        check = await db_operator(db.Certificates.find_one(data))
-        if check:
-            return check['_id']
-        res = await db_operator(db.Certificates.insert_one(data))
-        if res.acknowledged:
-            return res.inserted_id
-        else:
-            print("Error: Failed")
-            return False
-    except Exception as e:
-        print(str(e))
-        #traceback.print_exc()
-        return False
-    
-
-async def saveDomain(db, host, cert_id):
-    try:
-        check = await db_operator(db.Domains.find_one({"host":host}))
-        if check:
-            if check['cert'] != cert_id and ( not check['cert'] and cert_id ):
-                await db_operator(db.Domains.find_one_and_update({"host":host},
-                                                     {"$set":{"cert":cert_id}},
-                                                      upsert=True,
-                                                      return_document=ReturnDocument.AFTER))
-            else:
-                return True
-        else:
-            await db_operator(db.Domains.insert_one({"host":host,"cert":cert_id}))
-    except Exception as e:
-        print(str(e))
-        #traceback.print_exc()
-        return False
-    return True
-
-async def _saveRDN(db, data, upper=None):
-    try:
-        update = copy.deepcopy(data) 
-        update['upper'] = upper
-        data.pop("trusted")
-        check = await db_operator(db.RDNs.find_one(data))
-        if check:
-            if upper and not check['upper']:
-                await db_operator(db.RDNs.update_one(data, {"$set":{"upper":upper}}))
-            return check['_id']
-        else:
-            res = await db_operator(db.RDNs.insert_one(update))
-        if res:
-            return res.inserted_id
-        else:
-            return -1
-    except Exception as e:
-        print(str(e))
-        traceback.print_exc()
-        raise
-
-async def saveRDNs(db, cert, upper=None):
-    try:
-        res1 = await  _saveRDN(db, cert.get_issuer_info(), upper=upper)
-        res2 = await  _saveRDN(db, cert.get_subject_info(), upper=res1)
-        return res1, res2
-    except Exception as e:
-        print(str(e))
-        return False
-
-async def get_certificate_chain(db, cert):
-    chain=[cert]
-    current = cert
-    while True:
-        try:
-            upper_url = await current.get_upper_url(db)
-            if isinstance(upper_url, dict):
-                current = Certificate(trusted=True).init_cert(pem_string=upper_url['pem'])
-                chain.append(current)
-                break
-            else:
-                if upper_url is False:
-                    chain[len(chain)-1].setTrusted(False)
-                    break
-                upper_crt = await get_upper_certificate_crt(upper_url)
-                if not upper_crt:
-                    return False
-                current = Certificate().init_cert(der_string=upper_crt)
-            chain.append(current)
-        except Exception as e:
-            print(str(e))
-            traceback.print_exc()
-            raise
-    return chain
